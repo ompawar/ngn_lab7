@@ -21,6 +21,10 @@ from ryu.ofproto import ofproto_v1_3
 from ryu.lib.packet import packet
 from ryu.lib.packet import ethernet
 from ryu.lib.packet import ether_types
+from ryu.lib.packet import ipv4
+from ryu.lib.packet import tcp
+from ryu.lib.packet import arp
+
 
 
 class SimpleSwitch13(app_manager.RyuApp):
@@ -29,6 +33,52 @@ class SimpleSwitch13(app_manager.RyuApp):
     def __init__(self, *args, **kwargs):
         super(SimpleSwitch13, self).__init__(*args, **kwargs)
         self.mac_to_port = {}
+        
+        #Creating class variables for storing various attributes
+        
+        #for storing our three servers' data.This will be 
+        #a list of dictionaries, where each dict will have ip, mac and
+        #switch's port number to which it is connected.  
+        self.list_of_servers = []
+        self.list_of_servers.append({'ip':"10.0.0.1", 'mac':"00:00:00:00:00:01", 'switch_port':"1" })
+        self.list_of_servers.append({'ip':"10.0.0.2", 'mac':"00:00:00:00:00:02", 'switch_port':"2" })
+        self.list_of_servers.append({'ip':"10.0.0.3", 'mac':"00:00:00:00:00:03", 'switch_port':"3" })
+        
+        #a counter which will keep on increasing as per each
+        #packet_in event triggered. It will be used in 
+        #round_robin functionality
+        self.counter = 0
+        
+        #variables for load balancer IP and mac i.e. service IP and mac
+        self.service_ip = "10.0.0.100"
+        self.service_mac ="10:10:10:10:10:10" 
+        
+    def create_arp_reply(self, source_mac, source_ip):
+        
+        #print("Data Received: ", source_mac, source_ip)
+        src_mac = self.service_mac
+        src_ip = self.service_ip
+        dst_mac = source_mac    #source(requester) becomes destination
+        dst_ip = source_ip
+        
+        arp_opcode = 2  #opcode for Reply
+        
+        ethertype = 2054    
+        hwtype = 1
+        proto = 2048
+        hlen = 6
+        plen = 4
+
+        pkt = packet.Packet()
+        e = ethernet.ethernet(dst_mac, src_mac, ethertype)
+        a = arp.arp(hwtype, proto, hlen, plen, arp_opcode,
+                    src_mac, src_ip, dst_mac, dst_ip)
+        pkt.add_protocol(e)
+        pkt.add_protocol(a)
+        pkt.serialize()
+
+        return pkt
+     
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -79,6 +129,34 @@ class SimpleSwitch13(app_manager.RyuApp):
 
         pkt = packet.Packet(msg.data)
         eth = pkt.get_protocols(ethernet.ethernet)[0]
+        
+        #print("Static Data: ", self.service_ip, self.service_mac)
+        #print(eth)
+        
+        #check if the packet_in is an ARP request for service_ip.
+        if eth.ethertype == 2054:
+            arp_data = pkt.get_protocols(arp.arp)[0]
+            #print(arp_data)
+            #print(arp_data.dst_ip, arp_data.opcode)
+            if (arp_data.dst_ip == self.service_ip and arp_data.opcode == 1):
+                print("ARP Request for service_ip received")
+                
+                #create ARP reply 
+                arp_reply = self.create_arp_reply(arp_data.src_mac, arp_data.src_ip)
+                #print(arp_reply) 
+                
+                #to forward the ARP reply on the port on which request was received. 
+                actions = [parser.OFPActionOutput(in_port)]
+                
+                #create packet_out
+                out = parser.OFPPacketOut(datapath=datapath, in_port = ofproto.OFPP_ANY, data=arp_reply.data, actions=actions, buffer_id = 0xffffffff)
+                
+                
+                #sending packet out message to forward the packet
+                datapath.send_msg(out)
+            
+            return
+              
 
         if eth.ethertype == ether_types.ETH_TYPE_LLDP:
             # ignore lldp packet

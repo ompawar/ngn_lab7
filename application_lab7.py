@@ -155,44 +155,134 @@ class SimpleSwitch13(app_manager.RyuApp):
                 #sending packet out message to forward the packet
                 datapath.send_msg(out)
             
-            return
-              
-
+            
+            
+            else:
+                dst = eth.dst
+                src = eth.src
+            
+                dpid = datapath.id
+                self.mac_to_port.setdefault(dpid, {})
+            
+                self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port)
+            
+                # learn a mac address to avoid FLOOD next time.
+                self.mac_to_port[dpid][src] = in_port
+            
+                if dst in self.mac_to_port[dpid]:
+                    out_port = self.mac_to_port[dpid][dst]
+                else:
+                    out_port = ofproto.OFPP_FLOOD
+            
+                actions = [parser.OFPActionOutput(out_port)]
+            
+                # install a flow to avoid packet_in next time
+                if out_port != ofproto.OFPP_FLOOD:
+                    match = parser.OFPMatch(in_port=in_port, eth_dst=dst)
+                    # verify if we have a valid buffer_id, if yes avoid to send both
+                    # flow_mod & packet_out
+                    if msg.buffer_id != ofproto.OFP_NO_BUFFER:
+                        self.add_flow(datapath, 1, match, actions, msg.buffer_id)
+                        return
+                    else:
+                        self.add_flow(datapath, 1, match, actions)
+                data = None
+                if msg.buffer_id == ofproto.OFP_NO_BUFFER:
+                    data = msg.data
+            
+                out = parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id,
+                                          in_port=in_port, actions=actions, data=data)
+                datapath.send_msg(out)
+            
+            
+            return  
+        #####################################simple_switch_13.py ##################################
+        '''
         if eth.ethertype == ether_types.ETH_TYPE_LLDP:
             # ignore lldp packet
             return
-        dst = eth.dst
-        src = eth.src
+        
+        '''
+        #####################################simple_switch_13.py ##################################
+        
+        #get IP packet data
+        ip_data = pkt.get_protocols(ipv4.ipv4)[0]
+        #print(ip_data)
+        print("Source IP: ", ip_data.src)
+        print("Destination IP: ", ip_data.dst)
+        print("Protocol: ", ip_data.proto)
+                
+        
+        #get TCP data 
+        tcp_data = pkt.get_protocols(tcp.tcp)[0]
+        #print(tcp_data)
+        print("Source TCP port: ", tcp_data.src_port)
+        print("Dest TCP port: ", tcp_data.dst_port)
+        
+        #print("Buffer ID value: ", msg.buffer_id)
+        
+        #Choose a server by round-robin method.
+        server_id = self.counter%3
+        print("Server id: ", server_id)
+        server_ip = self.list_of_servers[server_id]['ip']
+        server_mac = self.list_of_servers[server_id]['mac']
+        server_switchport = self.list_of_servers[server_id]['switch_port']
+        print("server IP: ",server_ip )
+        print("server mac: ",server_mac )
+        print("server switchport: ",server_switchport)
+        self.counter += 1
+         
+        
+        
+        # Match the incoming TCP packet and then rewrite destination IP and destination MAC
+        match = parser.OFPMatch(in_port=in_port, eth_type=eth.ethertype, eth_src=eth.src, eth_dst=eth.dst, 
+                ip_proto=ip_data.proto, ipv4_src=ip_data.src, ipv4_dst=ip_data.dst, 
+                tcp_src=tcp_data.src_port, tcp_dst=tcp_data.dst_port)
 
-        dpid = datapath.id
-        self.mac_to_port.setdefault(dpid, {})
+        port =1
+        actions = [parser.OFPActionSetField(eth_dst="00:00:00:00:00:01"),
+                   parser.OFPActionSetField(ipv4_dst="10.0.0.1"),
+                   parser.OFPActionOutput(port)]
+        
+        priority = 10
+        buffer_id= msg.buffer_id
+        
+        #call function add_flow of simple_switch_13 to send the flow_mod message
+        self.add_flow(datapath, priority, match, actions, buffer_id)
+        
+        #inst = [parser.OFPInstructionActions(ofp.OFPIT_APPLY_ACTIONS, actions)]
+        #cookie = random.randint(0, 0xffffffffffffffff)
+        #mod = parser.OFPFlowMod(datapath=datapath, match=match, idle_timeout=10,
+             #   instructions=inst, buffer_id = msg.buffer_id, cookie=cookie)
+        #datapath.send_msg(mod)
+        
+        # Match the incoming TCP packet and then rewrite destination IP and destination MAC
+        match = parser.OFPMatch(in_port=port,
+                eth_type=eth.ethertype,  eth_src="00:00:00:00:00:01", eth_dst=eth.src, 
+                ip_proto=ip_data.proto,    ipv4_src="10.0.0.1", ipv4_dst=ip_data.src,
+                tcp_src=tcp_data.dst_port, tcp_dst=tcp_data.src_port)
 
-        self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port)
+        
+        actions = ([parser.OFPActionSetField(eth_src=self.service_mac),
+                    parser.OFPActionSetField(ipv4_src=self.service_ip),
+                    parser.OFPActionOutput(in_port) ])
+        
+        
+        
+        self.add_flow(datapath, priority, match, actions)
+        
+        #priority = 10
+        #buffer_id= msg.buffer_id
+        
+        #inst = [ofp_parser.OFPInstructionActions(ofp.OFPIT_APPLY_ACTIONS, actions)]
 
-        # learn a mac address to avoid FLOOD next time.
-        self.mac_to_port[dpid][src] = in_port
+        #cookie = random.randint(0, 0xffffffffffffffff)
 
-        if dst in self.mac_to_port[dpid]:
-            out_port = self.mac_to_port[dpid][dst]
-        else:
-            out_port = ofproto.OFPP_FLOOD
-
-        actions = [parser.OFPActionOutput(out_port)]
-
-        # install a flow to avoid packet_in next time
-        if out_port != ofproto.OFPP_FLOOD:
-            match = parser.OFPMatch(in_port=in_port, eth_dst=dst)
-            # verify if we have a valid buffer_id, if yes avoid to send both
-            # flow_mod & packet_out
-            if msg.buffer_id != ofproto.OFP_NO_BUFFER:
-                self.add_flow(datapath, 1, match, actions, msg.buffer_id)
-                return
-            else:
-                self.add_flow(datapath, 1, match, actions)
-        data = None
-        if msg.buffer_id == ofproto.OFP_NO_BUFFER:
-            data = msg.data
-
-        out = parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id,
-                                  in_port=in_port, actions=actions, data=data)
-        datapath.send_msg(out)
+        #mod = ofp_parser.OFPFlowMod(datapath=datapath, match=match, idle_timeout=10,
+                #instructions=inst, cookie=cookie)
+        #datapath.send_msg(mod)
+        
+        
+        
+        
+        

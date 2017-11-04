@@ -109,7 +109,7 @@ class SimpleSwitch13(app_manager.RyuApp):
                                     priority=priority, match=match,
                                     instructions=inst)
         else:
-            mod = parser.OFPFlowMod(datapath=datapath, priority=priority,
+            mod = parser.OFPFlowMod(datapath=datapath, priority=priority, 
                                     match=match, instructions=inst)
         datapath.send_msg(mod)
 
@@ -226,7 +226,7 @@ class SimpleSwitch13(app_manager.RyuApp):
         print("Server id: ", server_id)
         server_ip = self.list_of_servers[server_id]['ip']
         server_mac = self.list_of_servers[server_id]['mac']
-        server_switchport = self.list_of_servers[server_id]['switch_port']
+        server_switchport = int(self.list_of_servers[server_id]['switch_port'])
         print("server IP: ",server_ip )
         print("server mac: ",server_mac )
         print("server switchport: ",server_switchport)
@@ -239,48 +239,46 @@ class SimpleSwitch13(app_manager.RyuApp):
                 ip_proto=ip_data.proto, ipv4_src=ip_data.src, ipv4_dst=ip_data.dst, 
                 tcp_src=tcp_data.src_port, tcp_dst=tcp_data.dst_port)
 
-        port =1
-        actions = [parser.OFPActionSetField(eth_dst="00:00:00:00:00:01"),
-                   parser.OFPActionSetField(ipv4_dst="10.0.0.1"),
-                   parser.OFPActionOutput(port)]
+        actions = [parser.OFPActionSetField(eth_dst=server_mac),
+                   parser.OFPActionSetField(ipv4_dst=server_ip),
+                   parser.OFPActionOutput(server_switchport)]
         
         priority = 10
-        buffer_id= msg.buffer_id
-        
+        #buffer_id= msg.buffer_id
+        #timeout = 10
         #call function add_flow of simple_switch_13 to send the flow_mod message
-        self.add_flow(datapath, priority, match, actions, buffer_id)
+        #self.add_flow(datapath, priority, match, actions, timeout, buffer_id)
         
-        #inst = [parser.OFPInstructionActions(ofp.OFPIT_APPLY_ACTIONS, actions)]
+        inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
         #cookie = random.randint(0, 0xffffffffffffffff)
-        #mod = parser.OFPFlowMod(datapath=datapath, match=match, idle_timeout=10,
-             #   instructions=inst, buffer_id = msg.buffer_id, cookie=cookie)
-        #datapath.send_msg(mod)
+        mod = parser.OFPFlowMod(datapath=datapath, match=match, priority=priority, idle_timeout=10,
+                instructions=inst, buffer_id = msg.buffer_id)
+        datapath.send_msg(mod)
+        
+        
+        
+        
         
         # Match the incoming TCP packet and then rewrite destination IP and destination MAC
-        match = parser.OFPMatch(in_port=port,
-                eth_type=eth.ethertype,  eth_src="00:00:00:00:00:01", eth_dst=eth.src, 
-                ip_proto=ip_data.proto,    ipv4_src="10.0.0.1", ipv4_dst=ip_data.src,
+        match = parser.OFPMatch(in_port=server_switchport,
+                eth_type=eth.ethertype,  eth_src=server_mac, eth_dst=eth.src, 
+                ip_proto=ip_data.proto,    ipv4_src=server_ip, ipv4_dst=ip_data.src,
                 tcp_src=tcp_data.dst_port, tcp_dst=tcp_data.src_port)
 
-        
         actions = ([parser.OFPActionSetField(eth_src=self.service_mac),
                     parser.OFPActionSetField(ipv4_src=self.service_ip),
                     parser.OFPActionOutput(in_port) ])
         
+        #self.add_flow(datapath, priority, match, actions, timeout)
         
-        
-        self.add_flow(datapath, priority, match, actions)
-        
-        #priority = 10
+        priority = 10
         #buffer_id= msg.buffer_id
         
-        #inst = [ofp_parser.OFPInstructionActions(ofp.OFPIT_APPLY_ACTIONS, actions)]
-
+        inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
         #cookie = random.randint(0, 0xffffffffffffffff)
-
-        #mod = ofp_parser.OFPFlowMod(datapath=datapath, match=match, idle_timeout=10,
-                #instructions=inst, cookie=cookie)
-        #datapath.send_msg(mod)
+        mod = parser.OFPFlowMod(datapath=datapath, match=match, priority=priority, idle_timeout=10,
+                instructions=inst)
+        datapath.send_msg(mod)
         
         
         

@@ -24,6 +24,7 @@ from ryu.lib.packet import ether_types
 from ryu.lib.packet import ipv4
 from ryu.lib.packet import tcp
 from ryu.lib.packet import arp
+import random
 
 
 
@@ -45,7 +46,7 @@ class SimpleSwitch13(app_manager.RyuApp):
         self.list_of_servers.append({'ip':"10.0.0.3", 'mac':"00:00:00:00:00:03", 'switch_port':"3" })
         
         #a counter which will keep on increasing as per each
-        #packet_in event triggered. It will be used in 
+        #. It will be used in 
         #round_robin functionality
         self.counter = 0
         
@@ -130,8 +131,6 @@ class SimpleSwitch13(app_manager.RyuApp):
         pkt = packet.Packet(msg.data)
         eth = pkt.get_protocols(ethernet.ethernet)[0]
         
-        #print("Static Data: ", self.service_ip, self.service_mac)
-        #print(eth)
         
         #check if the packet_in is an ARP request for service_ip.
         if eth.ethertype == 2054:
@@ -139,7 +138,7 @@ class SimpleSwitch13(app_manager.RyuApp):
             #print(arp_data)
             #print(arp_data.dst_ip, arp_data.opcode)
             if (arp_data.dst_ip == self.service_ip and arp_data.opcode == 1):
-                print("ARP Request for service_ip received")
+                print("ARP Request for service_ip received ")
                 
                 #create ARP reply 
                 arp_reply = self.create_arp_reply(arp_data.src_mac, arp_data.src_ip)
@@ -154,9 +153,11 @@ class SimpleSwitch13(app_manager.RyuApp):
                 
                 #sending packet out message to forward the packet
                 datapath.send_msg(out)
+                
+                print("ARP reply sent")
             
             
-            
+            '''
             else:
                 dst = eth.dst
                 src = eth.src
@@ -193,46 +194,70 @@ class SimpleSwitch13(app_manager.RyuApp):
                 out = parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id,
                                           in_port=in_port, actions=actions, data=data)
                 datapath.send_msg(out)
-            
+            '''
             
             return  
-        #####################################simple_switch_13.py ##################################
         '''
         if eth.ethertype == ether_types.ETH_TYPE_LLDP:
             # ignore lldp packet
             return
         
         '''
-        #####################################simple_switch_13.py ##################################
         
         #get IP packet data
         ip_data = pkt.get_protocols(ipv4.ipv4)[0]
         #print(ip_data)
-        print("Source IP: ", ip_data.src)
-        print("Destination IP: ", ip_data.dst)
-        print("Protocol: ", ip_data.proto)
+        #print("Source IP: ", ip_data.src)
+        #print("Destination IP: ", ip_data.dst)
+        #print("Protocol: ", ip_data.proto)
                 
         
         #get TCP data 
         tcp_data = pkt.get_protocols(tcp.tcp)[0]
         #print(tcp_data)
-        print("Source TCP port: ", tcp_data.src_port)
-        print("Dest TCP port: ", tcp_data.dst_port)
+        #print("Source TCP port: ", tcp_data.src_port)
+        #print("Dest TCP port: ", tcp_data.dst_port)
         
         #print("Buffer ID value: ", msg.buffer_id)
+        if(ip_data.src == "10.0.0.4"):
+            client_id = 1
+        elif(ip_data.src == "10.0.0.5"):
+            client_id = 2
+        elif(ip_data.src == "10.0.0.6"):
+            client_id = 3
+        elif(ip_data.src == "10.0.0.7"):
+            client_id = 4
+            
+        
+        print("HTTP request received from Client ", client_id)
+        print("Client IP: ", ip_data.src )
+        
         
         #Choose a server by round-robin method.
         server_id = self.counter%3
-        print("Server id: ", server_id)
+        #print("Server id: ", server_id)
         server_ip = self.list_of_servers[server_id]['ip']
         server_mac = self.list_of_servers[server_id]['mac']
         server_switchport = int(self.list_of_servers[server_id]['switch_port'])
-        print("server IP: ",server_ip )
-        print("server mac: ",server_mac )
-        print("server switchport: ",server_switchport)
-        self.counter += 1
-         
+        #print("server IP: ",server_ip )
+        #print("server mac: ",server_mac )
+        #print("server switchport: ",server_switchport)
         
+        #increment the counter
+        self.counter += 1
+        
+        print("Server Selected for this request : ", server_id + 1, "    Server IP: ",server_ip, "    Server MAC: ",server_mac, "    Packet will be forwarded from port Number: ", server_switchport)
+        #print("    Server IP: ",server_ip )
+        #print("    Server mac: ",server_mac )
+        #print("Packet will be forwarded from port Number: ", server_switchport)
+         
+        '''
+        #Change only destination IP and Destination MAC, source IP and source  MAC kept same
+        #Thus, server makes ARP request for client IP, needs the  simple_switch_13 code to work. 
+        
+        priority = 10
+        ideal_imeout = 10
+        hard_time = 200
         
         # Match the incoming TCP packet and then rewrite destination IP and destination MAC
         match = parser.OFPMatch(in_port=in_port, eth_type=eth.ethertype, eth_src=eth.src, eth_dst=eth.dst, 
@@ -243,20 +268,16 @@ class SimpleSwitch13(app_manager.RyuApp):
                    parser.OFPActionSetField(ipv4_dst=server_ip),
                    parser.OFPActionOutput(server_switchport)]
         
-        priority = 10
-        #buffer_id= msg.buffer_id
-        #timeout = 10
+        
+        
         #call function add_flow of simple_switch_13 to send the flow_mod message
         #self.add_flow(datapath, priority, match, actions, timeout, buffer_id)
         
         inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
         #cookie = random.randint(0, 0xffffffffffffffff)
-        mod = parser.OFPFlowMod(datapath=datapath, match=match, priority=priority, idle_timeout=10,
-                instructions=inst, buffer_id = msg.buffer_id)
+        mod = parser.OFPFlowMod(datapath=datapath, match=match, priority=priority, idle_timeout=ideal_imeout , hard_timeout= hard_time,
+                instructions=inst, buffer_id = msg.buffer_id, cookie= cookie)
         datapath.send_msg(mod)
-        
-        
-        
         
         
         # Match the incoming TCP packet and then rewrite destination IP and destination MAC
@@ -271,16 +292,66 @@ class SimpleSwitch13(app_manager.RyuApp):
         
         #self.add_flow(datapath, priority, match, actions, timeout)
         
-        priority = 10
+        
         #buffer_id= msg.buffer_id
         
         inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
         #cookie = random.randint(0, 0xffffffffffffffff)
-        mod = parser.OFPFlowMod(datapath=datapath, match=match, priority=priority, idle_timeout=10,
-                instructions=inst)
+        mod = parser.OFPFlowMod(datapath=datapath, match=match, priority=priority, idle_timeout=ideal_imeout , hard_timeout= hard_time,
+                instructions=inst, cookie= cookie)
+        datapath.send_msg(mod)
+        
+        '''
+        #Change destination IP, Destination MAC, source IP and source  MAC
+        #Thus, server makes ARP request for service IP only. 
+        
+        priority = 10
+        idle_timeout = 10
+        hard_time = 200
+        
+        # Match the incoming TCP packet and then rewrite destination IP , destination MAC, source IP and source MAC
+        match = parser.OFPMatch(in_port=in_port, eth_type=eth.ethertype, eth_src=eth.src, eth_dst=eth.dst, 
+                ip_proto=ip_data.proto, ipv4_src=ip_data.src, ipv4_dst=ip_data.dst, 
+                tcp_src=tcp_data.src_port, tcp_dst=tcp_data.dst_port)
+
+        actions = [parser.OFPActionSetField(eth_dst=server_mac),
+                   parser.OFPActionSetField(ipv4_dst=server_ip),
+                   parser.OFPActionSetField(eth_src=self.service_mac),
+                   parser.OFPActionSetField(ipv4_src=self.service_ip),
+                   parser.OFPActionOutput(server_switchport)]
+              
+        inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
+        cookie = random.randint(0, 0xffffffffffffffff)
+        
+        mod = parser.OFPFlowMod(datapath=datapath, match=match, priority=priority, idle_timeout=idle_timeout, hard_timeout= hard_time,
+                instructions=inst, buffer_id = msg.buffer_id, cookie= cookie)
+        datapath.send_msg(mod)
+        
+        print("Flow entry pushed to match packet with Source IP: ",ip_data.src, "Source MAC: ",eth.src, "Dest. IP: ",ip_data.dst, 
+              "Dest MAC: ",eth.dst, " and forward it on port number: ",server_switchport)
+        
+        
+        # Match the incoming TCP packet and then rewrite destination IP, destination MAC, Source IP and Source MAC
+        match = parser.OFPMatch(in_port=server_switchport,
+                eth_type=eth.ethertype,  eth_src=server_mac, eth_dst=self.service_mac, 
+                ip_proto=ip_data.proto,    ipv4_src=server_ip, ipv4_dst=self.service_ip,
+                tcp_src=tcp_data.dst_port, tcp_dst=tcp_data.src_port)
+
+        actions = ([parser.OFPActionSetField(eth_src=self.service_mac),
+                    parser.OFPActionSetField(ipv4_src=self.service_ip),
+                    parser.OFPActionSetField(eth_dst=eth.src),
+                    parser.OFPActionSetField(ipv4_dst=ip_data.src),
+                    parser.OFPActionOutput(in_port) ])
+                 
+        inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
+        cookie = random.randint(0, 0xffffffffffffffff)
+        
+        mod = parser.OFPFlowMod(datapath=datapath, match=match, priority=priority, idle_timeout=idle_timeout, hard_timeout= hard_time,
+                instructions=inst, cookie= cookie)
         datapath.send_msg(mod)
         
         
-        
+        print("Flow entry pushed to match packet with Source IP: ",server_ip, "Source MAC: ",server_mac, "Dest. IP: ",self.service_ip, "Dest MAC: ",self.service_mac, 
+              "received on the port ",server_switchport," and forward it on port number: ",in_port)
         
         
